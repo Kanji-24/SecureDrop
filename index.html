@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1b2a" />
+  <title>Message Drop</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    :root {
+      --bg: #0d1b2a;
+      --blue: #1b3a4b;
+      --accent: #3a7ca5;
+      --brown: #c4a484;
+      --white: #f5f0e6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--white);
+      min-height: 100dvh;
+      padding: 20px;
+    }
+    .container { max-width: 420px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 1.8rem; }
+    p { text-align: center; color: var(--brown); margin-bottom: 24px; }
+    input, button, textarea {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid #3a7ca5;
+      background: #152535;
+      color: white;
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+    button {
+      background: linear-gradient(135deg, #3a7ca5, #2a5a7a);
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #recordBtn { background: linear-gradient(135deg, #8b5e3c, #a67c52); }
+    #recordBtn.recording { background: #c0392b; }
+    .hidden { display: none !important; }
+    .error { color: #ff6b6b; text-align: center; min-height: 24px; margin-top: 8px; }
+    .success { color: #7dcea0; }
+    .card {
+      background: #1b3a4b;
+      border-radius: 16px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    label { display: block; color: var(--brown); margin-bottom: 6px; font-size: 0.9rem; }
+    .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .presets button { width: auto; padding: 8px 12px; font-size: 0.9rem; margin: 0; }
+    .section { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen">
+      <h1>Message Drop</h1>
+      <p>Enter username</p>
+      
+      <input type="text" id="username" placeholder="Username" autocomplete="username">
+      
+      <div id="codeBox" class="hidden">
+        <p>Enter access code</p>
+        <input type="text" id="code" placeholder="811-XXX" maxlength="7">
+        <small style="color:#c4a484">Format: 811-XXX</small>
+      </div>
+
+      <button id="continueBtn">Continue</button>
+      <div id="loginError" class="error"></div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="appScreen" class="hidden">
+      <h1>Message Drop</h1>
+      <p id="welcome">Private channel</p>
+
+      <div class="card">
+        <label>Quick messages</label>
+        <div class="presets">
+          <button data-msg="All good">All good</button>
+          <button data-msg="Need to talk">Need to talk</button>
+          <button data-msg="Call me when you can">Call me</button>
+          <button data-msg="I'm safe">I'm safe</button>
+          <button data-msg="Emergency">Emergency</button>
+        </div>
+
+        <label>Text message</label>
+        <textarea id="message" rows="4" placeholder="Write your message..."></textarea>
+        <button id="sendText">Send Text</button>
+
+        <div class="section">
+          <label>Voice note</label>
+          <button id="recordBtn">Start Recording</button>
+          <div id="recStatus" class="hidden" style="color:#ff6b6b; margin:8px 0;"></div>
+          <audio id="audioPreview" controls class="hidden" style="width:100%; margin-top:10px;"></audio>
+          <button id="sendVoice" class="hidden">Send Voice Note</button>
+        </div>
+
+        <div class="section">
+          <label>Photo</label>
+          <input type="file" id="photoInput" accept="image/*" capture="environment">
+          <img id="photoPreview" class="hidden" style="width:100%; border-radius:10px; margin-top:10px;">
+          <button id="sendPhoto" class="hidden">Send Photo</button>
+        </div>
+
+        <div id="status" class="error"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ========== CONFIG - PUT YOUR REAL VALUES HERE ==========
+    const FRIEND_USERNAME = "cybnatic";
+    const ACCESS_CODE     = "811-430";
+    const BOT_TOKEN       = "8859021054:AAFdXusaPgxHqiuKVX-ayNWu4xchOd_UxFM";
+    const CHAT_ID         = "8877414037";
+    // ========================================================
+
+    console.log("%c Message Drop loaded successfully", "color: #7dcea0; font-weight: bold");
+
+    const loginScreen = document.getElementById("loginScreen");
+    const appScreen   = document.getElementById("appScreen");
+    const codeBox     = document.getElementById("codeBox");
+    const loginError  = document.getElementById("loginError");
+    const statusEl    = document.getElementById("status");
+    const welcome     = document.getElementById("welcome");
+
+    let currentUser = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let audioBlob = null;
+    let photoBlob = null;
+
+    // Continue button
+    document.getElementById("continueBtn").addEventListener("click", handleLogin);
+    document.getElementById("username").addEventListener("keydown", e => {
+      if (e.key === "Enter") handleLogin();
+    });
+
+    function handleLogin() {
+      console.log("Continue button clicked");
+      const username = document.getElementById("username").value.trim().toLowerCase();
+      const code = document.getElementById("code").value.trim().toUpperCase();
+
+      loginError.textContent = "";
+
+      if (!username) {
+        loginError.textContent = "Please enter a username";
+        return;
+      }
+
+      console.log("Username entered:", username);
+
+      // Direct access for Cybnatic
+      if (username === FRIEND_USERNAME) {
+        console.log("Cybnatic detected → granting direct access");
+        currentUser = "Cybnatic";
+        showApp();
+        return;
+      }
+
+      // Show code field for others
+      if (codeBox.classList.contains("hidden")) {
+        codeBox.classList.remove("hidden");
+        loginError.textContent = "Access code required";
+        console.log("Showing access code field");
+        return;
+      }
+
+      // Validate code
+      if (code !== ACCESS_CODE) {
+        loginError.textContent = "Incorrect access code";
+        console.log("Wrong code entered");
+        return;
+      }
+
+      currentUser = document.getElementById("username").value.trim();
+      showApp();
+    }
+
+    function showApp() {
+      console.log("Showing main app for:", currentUser);
+      loginScreen.classList.add("hidden");
+      appScreen.classList.remove("hidden");
+      welcome.textContent = currentUser === "Cybnatic" 
+        ? "Direct access – Cybnatic" 
+        : `Logged in as ${currentUser}`;
+    }
+
+    // Quick presets
+    document.querySelectorAll(".presets button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("message").value = btn.dataset.msg;
+      });
+    });
+
+    // Send Text
+    document.getElementById("sendText").addEventListener("click", async () => {
+      const text = document.getElementById("message").value.trim();
+      if (!text) return showStatus("Write a message first", true);
+
+      const fullText = `From: ${currentUser}\n\n${text}`;
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: CHAT_ID, text: fullText })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showStatus("Text sent ✓");
+          document.getElementById("message").value = "";
+        } else {
+          showStatus("Failed to send", true);
+        }
+      } catch {
+        showStatus("Failed to send", true);
+      }
+    });
+
+    // Voice recording (basic)
+    const recordBtn = document.getElementById("recordBtn");
+    recordBtn.addEventListener("click", async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        recordBtn.textContent = "Start Recording";
+        recordBtn.classList.remove("recording");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          const audio = document.getElementById("audioPreview");
+          audio.src = URL.createObjectURL(audioBlob);
+          audio.classList.remove("hidden");
+          document.getElementById("sendVoice").classList.remove("hidden");
+          stream.getTracks().forEach(t => t.stop());
+        };
+        mediaRecorder.start();
+        recordBtn.textContent = "Stop Recording";
+        recordBtn.classList.add("recording");
+      } catch {
+        showStatus("Microphone permission denied", true);
+      }
+    });
+
+    document.getElementById("sendVoice").addEventListener("click", async () => {
+      if (!audioBlob) return;
+      const fd = new FormData();
+      fd.append("chat_id", CHAT_ID);
+      fd.append("document", audioBlob, "voice.webm");
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
+          method: "POST",
+          body: fd
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showStatus("Voice note sent ✓");
+          document.getElementById("audioPreview").classList.add("hidden");
+          document.getElementById("sendVoice").classList.add("hidden");
+        } else showStatus("Failed to send voice", true);
+      } catch {
+        showStatus("Failed to send voice", true);
+      }
+    });
+
+    // Photo
+    document.getElementById("photoInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      photoBlob = file;
+      const img = document.getElementById("photoPreview");
+      img.src = URL.createObjectURL(file);
+      img.classList.remove("hidden");
+      document.getElementById("sendPhoto").classList.remove("hidden");
+    });
+
+    document.getElementById("sendPhoto").addEventListener("click", async () => {
+      if (!photoBlob) return;
+      const fd = new FormData();
+      fd.append("chat_id", CHAT_ID);
+      fd.append("photo", photoBlob);
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+          method: "POST",
+          body: fd
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showStatus("Photo sent ✓");
+          document.getElementById("photoPreview").classList.add("hidden");
+          document.getElementById("sendPhoto").classList.add("hidden");
+        } else showStatus("Failed to send photo", true);
+      } catch {
+        showStatus("Failed to send photo", true);
+      }
+    });
+
+    function showStatus(msg, isError = false) {
+      statusEl.textContent = msg;
+      statusEl.style.color = isError ? "#ff6b6b" : "#7dcea0";
+    }
+
+    // Service worker registration
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js")
+        .then(() => console.log("SW registered"))
+        .catch(err => console.log("SW registration failed:", err));
+    }
+  </script>
+</body>
+</html>
